@@ -1,0 +1,174 @@
+version: '3.7'
+services:
+  openldap:
+    image: osixia/openldap:latest
+    container_name: openldap
+    hostname: openldap
+    ports:
+      - "389:389"
+      - "636:636"
+    volumes:
+      - ./data/openldap/certificates:/container/service/sldap/asserts/certs
+      - ./data/openldap/sldap/database:/var/lib/ldap
+      - ./data/openldap/sldap/config:/etc/ldap/slapd.d
+    environment:
+      - LDAP_ORGANISATION=Home
+      - LDAP_DOMAIN=home.local
+      - LDAP_ADMIN_USER=admin
+      - LDAP_ADMIN_PASSWORD=admin
+      - LDAP_CONFIG_PASSWORD=config_pass
+      - "LDAP_BASE_DN=dc=home,dc=local"
+      - LDAP_READONLY_USER=True
+      - LDAP_READONLY_USER_USERNAME=manager
+      - LDAP_READONLY_USER_PASSWORD=password
+    networks:
+      - mynetwork
+
+  phpldapadmin:
+    image: osixia/phpldapadmin:latest
+    container_name: phpldapadmin
+    hostname: phpldapadmin
+    ports:
+      - "8083:80"
+    environment:
+      - PHPLDAPADMIN_LDAP_HOSTS=openldap
+      - PHPLDAPADMIN_HTTPS=false
+    networks:
+      - mynetwork
+    depends_on:
+      - openldap
+
+  gitlab:
+    image: 'gitlab/gitlab-ce:latest'
+    container_name: gitlab
+    hostname: gitlab
+    environment:
+      GITLAB_OMNIBUS_CONFIG: |
+        external_url 'http://192.168.86.86'
+        gitlab_rails['ldap_enabled'] = true
+        gitlab_rails['prevent_ldap_sign_in'] = false
+        gitlab_rails['ldap_servers'] = {
+        'main' => {
+          'label' => 'LDAP',
+          'host' =>  'openldap',
+          'port' => 389,
+          'uid' => 'uid',
+          'encryption' => 'plain',
+          'verify_certificates' => false,
+          'bind_dn' => 'cn=manager,dc=home,dc=local',
+          'password' => 'password',
+          'tls_options' => {
+            'ca_file' => '',
+            'ssl_version' => '',
+            'ciphers' => '',
+            'cert' => '',
+            'key' => ''
+          },
+          'timeout' => 10,
+          'active_directory' => false,
+          'allow_username_or_email_login' => true,
+          'block_auto_created_users' => false,
+          'base' => 'dc=home,dc=local',
+          'user_filter' => '',
+          'attributes' => {
+            'username' => ['uid', 'userid', 'sAMAccountName'],
+            'email' => ['mail', 'email', 'userPrincipalName'],
+            'name' => 'cn',
+            'first_name' => 'givenName',
+            'last_name' => 'sn'
+          },
+          'lowercase_usernames' => false,
+        
+          # EE Only
+          'group_base' => '',
+          'admin_group' => '',
+          'external_groups' => [],
+          'sync_ssh_keys' => false
+          }
+        }
+        # Add any other gitlab.rb configuration here, each on its own line
+    ports:
+      - '80:80'
+      - '443:443'
+      - '22:22'
+    volumes:
+      - './data/gitlab/config:/etc/gitlab'
+      - './data/gitlab/logs:/var/log/gitlab'
+      - './data/gitlab/data:/var/opt/gitlab'
+    shm_size: '256m'
+    networks:
+      - mynetwork
+
+  jenkins:
+    image: jenkins/jenkins:lts
+    container_name: jenkins
+    hostname: jenkins
+    ports:
+      - '8081:8080'
+    volumes:
+      - ./data/jenkins:/var/jenkins_home
+    networks:
+      - mynetwork
+    depends_on:
+      - openldap
+
+  redmine:
+    image: redmine
+    container_name: redmine
+    hostname: redmine
+    ports:
+      - 8082:3000
+    environment:
+      REDMINE_DB_MYSQL: db
+      REDMINE_DB_PASSWORD: example
+      REDMINE_SECRET_KEY_BASE: supersecretkey
+    networks:
+      - mynetwork
+    depends_on:
+      - db
+
+  db:
+    image: mysql:5.7
+    container_name: db
+    hostname: db
+    environment:
+      MYSQL_ROOT_PASSWORD: example
+      MYSQL_DATABASE: redmine
+    networks:
+      - mynetwork
+
+  nginx:
+    image: nginx
+    container_name: nginx
+    hostname: nginx
+    ports:
+      - 80:80
+    volumes:
+      - ./data/nginx/config:/etc/nginx/conf.d
+      - ./data/nginx/logs:/var/log/nginx
+      - ./data/nginx/certs:/etc/nginx/certs
+      - ./data/nginx/html:/usr/share/nginx/html:ro
+    networks:
+      - mynetwork
+
+  gerrit:
+    image: gerritcodereview/gerrit
+    container_name: gerrit
+    hostname: gerrit
+    ports:
+      - "29418:29418"
+      - "8084:8080"
+    depends_on:
+      - openldap
+    volumes:
+      - ./data/gerrit/etc:/var/gerrit/etc
+      - ./data/gerrit/git:/var/gerrit/git
+      - ./data/gerrit/db:/var/gerrit/db
+      - ./data/gerrit/index:/var/gerrit/index
+      - ./data/gerrit/cache:/var/gerrit/cache
+    networks:
+      - mynetwork
+
+networks:
+  mynetwork:
+    driver: bridge
