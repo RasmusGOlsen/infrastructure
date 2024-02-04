@@ -78,7 +78,7 @@ services:
             'last_name' => 'sn'
           },
           'lowercase_usernames' => false,
-        
+
           # EE Only
           'group_base' => '',
           'admin_group' => '',
@@ -90,7 +90,7 @@ services:
     ports:
       - '80:80'
       - '443:443'
-      - '22:22'
+      - '2222:22'
     volumes:
       - './data/gitlab/config:/etc/gitlab'
       - './data/gitlab/logs:/var/log/gitlab'
@@ -98,6 +98,22 @@ services:
     shm_size: '256m'
     networks:
       - mynetwork
+    depends_on:
+      - openldap
+
+
+  gitlab-runner:
+    image: gitlab/gitlab-runner:latest
+    container_name: gitlab-runner
+    hostname: runner
+    volumes:
+      - ./data/gitlab-runner:/etc/gitlab-runner
+      - /var/run/docker.sock:/var/run/docker.sock
+    networks:
+      - mynetwork
+    depends_on:
+      - gitlab
+
 
   jenkins:
     image: jenkins/jenkins:lts
